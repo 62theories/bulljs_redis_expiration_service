@@ -1,0 +1,37 @@
+version: '3'
+services:
+  zookeeper:
+    platform: linux/x86_64
+    image: confluentinc/cp-zookeeper:7.1.0
+    container_name: zookeeper
+    hostname: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    networks:
+      - kafka-network
+
+  kafka:
+    platform: linux/x86_64
+    image: confluentinc/cp-kafka:7.1.0
+    container_name: kafka
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    environment:
+      ZOOKEEPER_SASL_ENABLED: 'false'
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_SERVER_PROPERTIES: |
+        auto.create.topics.enable=true
+        offsets.topic.replication.factor=1
+    networks:
+      - kafka-network
+networks:
+  kafka-network:
