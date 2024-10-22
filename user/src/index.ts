@@ -6,6 +6,8 @@ import { v4 as uuidv4 } from 'uuid';
 import ms from 'ms';
 import { add } from 'date-fns';
 import Queue from 'bull';
+import swaggerJsdoc from 'swagger-jsdoc';
+import swaggerUi from 'swagger-ui-express';
 
 // Add this near the top of your file, after the imports
 declare global {
@@ -23,6 +25,39 @@ const REFRESH_TOKEN_EXPIRY_MS = ms(REFRESH_TOKEN_EXPIRY);
 const app = express();
 const port = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'; // Use an environment variable in production
+
+// OpenAPI configuration
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Express API with JWT Authentication',
+      version: '1.0.0',
+      description: 'A simple Express API with JWT authentication',
+    },
+    servers: [
+      {
+        url: `http://localhost:${port}`,
+      },
+    ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+        },
+      },
+    },
+    security: [{
+      bearerAuth: [],
+    }],
+  },
+  apis: ['./src/index.ts'], // Path to the API docs
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // Initialize Prisma client
 const prisma = new PrismaClient();
@@ -58,6 +93,34 @@ app.get('/users', async (req: express.Request, res: express.Response) => {
 });
 
 // Register API endpoint
+/**
+ * @openapi
+ * /register:
+ *   post:
+ *     summary: Register a new user
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - username
+ *               - password
+ *             properties:
+ *               username:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ *       400:
+ *         description: Username already exists
+ *       500:
+ *         description: Internal Server Error
+ */
 app.post('/register', async (req: express.Request, res: express.Response) => {
   try {
     const { username, password } = req.body;
@@ -91,6 +154,34 @@ app.post('/register', async (req: express.Request, res: express.Response) => {
 });
 
 // Login API endpoint
+/**
+ * @openapi
+ * /login:
+ *   post:
+ *     summary: Login a user
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - username
+ *               - password
+ *             properties:
+ *               username:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       401:
+ *         description: Invalid credentials
+ *       500:
+ *         description: Internal Server Error
+ */
 app.post('/login', async (req: express.Request, res: express.Response) => {
   try {
     const { username, password } = req.body as { username: string; password: string };
@@ -119,8 +210,8 @@ app.post('/login', async (req: express.Request, res: express.Response) => {
 
     // Save refresh token to Redis using Bull queue
     await refreshTokenQueue.add(
-      refreshToken,
-      { userId: user.id },
+      'refreshToken',
+      { userId: user.id, refreshToken },
       { removeOnComplete: true, removeOnFail: true, delay: REFRESH_TOKEN_EXPIRY_MS }
     );
 
@@ -132,6 +223,33 @@ app.post('/login', async (req: express.Request, res: express.Response) => {
 });
 
 // Add refresh token endpoint
+/**
+ * @openapi
+ * /refresh-token:
+ *   post:
+ *     summary: Refresh access token
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: New access token generated
+ *       400:
+ *         description: Refresh token is required
+ *       403:
+ *         description: Invalid or expired refresh token
+ *       500:
+ *         description: Internal Server Error
+ */
 app.post('/refresh-token', async (req: express.Request, res: express.Response) => {
   const { refreshToken } = req.body;
 
@@ -141,8 +259,11 @@ app.post('/refresh-token', async (req: express.Request, res: express.Response) =
   }
 
   try {
-    const job = await refreshTokenQueue.getJob(refreshToken);
-
+    // Find the job with the given refresh token
+    const jobs = await refreshTokenQueue.getJobs(['delayed']);
+    console.log('jobs', jobs);
+    const job = jobs.find(job => job.data.refreshToken === refreshToken);
+    console.log('job', job);
     if (!job) {
       res.status(403).json({ error: 'Invalid or expired refresh token' });
       return;
@@ -162,8 +283,8 @@ app.post('/refresh-token', async (req: express.Request, res: express.Response) =
     // Remove old refresh token and add new one
     await job.remove();
     await refreshTokenQueue.add(
-      newRefreshToken,
-      { userId: user.id },
+      'refreshToken',
+      { userId: user.id, refreshToken: newRefreshToken },
       { removeOnComplete: true, removeOnFail: true, delay: REFRESH_TOKEN_EXPIRY_MS }
     );
 
@@ -204,6 +325,22 @@ const authenticateToken: express.RequestHandler = (req, res, next) => {
 };
 
 // Protected route example
+/**
+ * @openapi
+ * /protected:
+ *   get:
+ *     summary: Access protected route
+ *     tags: [Protected]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
 app.get('/protected', authenticateToken, (req, res) => {
   res.json({ message: 'This is a protected route', user: req.user });
 });
