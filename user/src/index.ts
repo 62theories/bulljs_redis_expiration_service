@@ -20,7 +20,7 @@ declare global {
 }
 
 const ACCESS_TOKEN_EXPIRY = "5m";
-const REFRESH_TOKEN_EXPIRY = "1m";
+const REFRESH_TOKEN_EXPIRY = "7d";
 const REFRESH_TOKEN_EXPIRY_MS = ms(REFRESH_TOKEN_EXPIRY);
 
 const app = express();
